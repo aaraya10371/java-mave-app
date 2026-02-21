@@ -6,9 +6,9 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE = "demo-app"
+        DOCKER_IMAGE    = "demo-app"
         GITHUB_REPO_URL = "https://github.com/aaraya10371/java-mave-app.git"
-        GIT_BRANCH = "jenkins-jobs"
+        GIT_BRANCH      = "jenkins-jobs"
     }
 
     stages {
@@ -24,7 +24,7 @@ pipeline {
                           versions:commit
                     '''
 
-                    // Get the project version safely (no Groovy ${project.version} interpolation)
+                    // Safe way to read project.version
                     def version = sh(
                         script: "mvn -q -DforceStdout help:evaluate -Dexpression=project.version",
                         returnStdout: true
@@ -54,7 +54,12 @@ pipeline {
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
-                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                        // Avoid leaking secrets in logs
+                        sh '''
+                            set +x
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            set -x
+                        '''
 
                         sh "docker build -t ${DOCKER_USER}/${DOCKER_IMAGE}:${env.IMAGE_NAME} ."
                         sh "docker push ${DOCKER_USER}/${DOCKER_IMAGE}:${env.IMAGE_NAME}"
@@ -66,7 +71,6 @@ pipeline {
         stage('deploy') {
             steps {
                 echo 'deploying docker image... (placeholder)'
-                // Add deploy commands later (k8s / docker run / etc.)
             }
         }
 
@@ -81,17 +85,31 @@ pipeline {
                         passwordVariable: 'GH_TOKEN'
                     )]) {
 
-                        sh 'git config --global user.email "jenkins@example.com"'
-                        sh 'git config --global user.name "jenkins"'
-
-                        sh 'git status'
-                        sh 'git add pom.xml'
-                        sh 'git commit -m "ci: version bump" || echo "No changes to commit"'
-
-                        // Robust push: don't put token in URL (avoids special-char URL issues)
                         sh '''
-                            git -c http.extraHeader="Authorization: Basic $(echo -n $GH_USER:$GH_TOKEN | base64)" \
-                            push ${GITHUB_REPO_URL} HEAD:${GIT_BRANCH}
+                            set +x
+                            git config --global user.email "jenkins@example.com"
+                            git config --global user.name "jenkins"
+
+                            git add pom.xml
+                            git commit -m "ci: version bump" || echo "No changes to commit"
+
+                            # Create an askpass helper so git can authenticate non-interactively
+                            cat > /tmp/git_askpass.sh <<'EOF'
+#!/bin/sh
+case "$1" in
+  Username*) echo "$GH_USER" ;;
+  Password*) echo "$GH_TOKEN" ;;
+  *) echo "" ;;
+esac
+EOF
+                            chmod +x /tmp/git_askpass.sh
+
+                            export GIT_ASKPASS=/tmp/git_askpass.sh
+                            export GIT_TERMINAL_PROMPT=0
+
+                            # Push without embedding token in URL
+                            git push ${GITHUB_REPO_URL} HEAD:${GIT_BRANCH}
+                            set -x
                         '''
                     }
                 }
