@@ -63,7 +63,7 @@ pipeline {
       steps {
         script {
           echo 'committing version update back to GitHub...'
-          withCredentials([usernamePassword(credentialsId: 'github-credentials', passwordVariable: 'GH_TOKEN', usernameVariable: 'GH_USER')]) {
+          withCredentials([usernamePassword(credentialsId: 'GitHub-Credentials', passwordVariable: 'GH_TOKEN', usernameVariable: 'GH_USER')]) {
             sh 'git config --global user.email "jenkins@example.com"'
             sh 'git config --global user.name "jenkins"'
             sh "git remote set-url origin https://${GH_USER}:${GH_TOKEN}@${GITHUB_REPO}"
